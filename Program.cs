@@ -238,7 +238,7 @@ class Program
         string SourceLink(Item item)
             => item.Source?.Remote == null
                 ? ""
-                : $"###### [View Source]({item.Source.Remote.Repo}/blob/{item.Source.Remote.Branch}/{item.Source.Remote.Path}#L{item.Source.StartLine + 1})";
+                : $"**[View Source]({item.Source.Remote.Repo}/blob/{item.Source.Remote.Branch}/{item.Source.Remote.Path}#L{item.Source.StartLine + 1})**";
 
         void Declaration(StringBuilder str, Item item)
         {
@@ -423,7 +423,7 @@ class Program
                 str.AppendLine($"# {item.Type} {FormatTypeName(item.Name)}");
                 str.AppendLine(GetSummary(item.Summary, isGroupedType)?.Trim());
                 str.AppendLine();
-                str.AppendLine($"###### **Assembly**: {item.Assemblies[0]}.dll");
+                str.AppendLine($"#### **Assembly**: {item.Assemblies[0]}.dll");
                 Declaration(str, item);
                 // do not when it is only System.Object
                 if (item.Inheritance?.Length > 1)
@@ -514,7 +514,7 @@ class Program
                         if (!string.IsNullOrWhiteSpace(method.Syntax!.Return?.Type))
                         {
                             str.AppendLine();
-                            str.AppendLine("##### Returns");
+                            str.AppendLine("#### Returns");
                             str.AppendLine();
                             str.Append(Link(method.Syntax.Return.Type, isGroupedType).Trim());
                             if (string.IsNullOrWhiteSpace(method.Syntax.Return?.Description))
@@ -526,7 +526,7 @@ class Program
                         if (method.Syntax.Parameters is { Length: > 0 })
                         {
                             str.AppendLine();
-                            str.AppendLine("##### Parameters");
+                            str.AppendLine("#### Parameters");
                             str.AppendLine();
                             if (method.Syntax.Parameters.Any(p => !string.IsNullOrWhiteSpace(p.Description)))
                             {
@@ -550,7 +550,7 @@ class Program
 
                         if (method.Syntax.TypeParameters is { Length: > 0 })
                         {
-                            str.AppendLine("##### Type Parameters");
+                            str.AppendLine("#### Type Parameters");
                             if (method.Syntax.TypeParameters.Any(tp => !string.IsNullOrWhiteSpace(tp.Description)))
                             {
                                 str.AppendLine("| Name | Description |");
@@ -567,7 +567,7 @@ class Program
                         if (method.Exceptions is { Length: > 0 })
                         {
                             str.AppendLine();
-                            str.AppendLine("##### Exceptions");
+                            str.AppendLine("#### Exceptions");
                             str.AppendLine();
                             foreach (var exception in method.Exceptions)
                             {
@@ -590,7 +590,7 @@ class Program
                         str.AppendLine($"### {FormatTypeName(@event.Name)}");
                         str.AppendLine(GetSummary(@event.Summary, isGroupedType)?.Trim());
                         Declaration(str, @event);
-                        str.AppendLine("##### Event Type");
+                        str.AppendLine("#### Event Type");
                         if (@event.Syntax!.Return!.Description == null)
                             str.AppendLine(Link(@event.Syntax.Return.Type, isGroupedType).Trim());
                         else
