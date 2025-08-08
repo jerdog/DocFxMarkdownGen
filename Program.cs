@@ -48,8 +48,11 @@ class Item
     public string[] Assemblies { get; set; } = Array.Empty<string>();
     public string Namespace { get; set; } = string.Empty;
     public string? Summary { get; set; }
+    public string? Remarks { get; set; }
+    public string[]? Example { get; set; }
     public Syntax? Syntax { get; set; }
     public string[]? Inheritance { get; set; }
+    public string[]? InheritedMembers { get; set; }
     public string[]? DerivedClasses { get; set; }
     public string[]? Implements { get; set; }
     public string[]? ExtensionMethods { get; set; }
@@ -117,6 +120,8 @@ class Program
     {
         if (Environment.GetEnvironmentVariable("JAN_DEBUG") == "1")
             Log73.Console.Options.LogLevel = LogLevel.Debug;
+
+        Log73.Console.WriteLine($"Running on: {RuntimeInformation.FrameworkDescription}");
 
         var versionString = Assembly.GetEntryAssembly()?
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
@@ -299,6 +304,25 @@ class Program
             summary = linkRegex.Replace(summary, match => $"[{match.Groups[2].Value}]({match.Groups[1].Value})");
             summary = brRegex.Replace(summary, _ => "\n\n");
 
+            // Handle HTML entities
+            summary = summary.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&");
+
+            // Handle bold tags
+            summary = Regex.Replace(summary, @"<b>([^<]*)</b>", "**$1**");
+            summary = Regex.Replace(summary, @"<strong>([^<]*)</strong>", "**$1**");
+
+            // Handle italic tags
+            summary = Regex.Replace(summary, @"<i>([^<]*)</i>", "*$1*");
+            summary = Regex.Replace(summary, @"<em>([^<]*)</em>", "*$1*");
+
+            // Handle span tags with class="term"
+            summary = Regex.Replace(summary, @"<span class=""term"">([^<]*)</span>", "**$1**");
+
+            // Handle ul/li tags for lists
+            summary = Regex.Replace(summary, @"<ul>", "");
+            summary = Regex.Replace(summary, @"</ul>", "");
+            summary = Regex.Replace(summary, @"<li>([^<]*)</li>", "* $1");
+
             // Clean up any remaining HTML tags
             summary = Regex.Replace(summary, @"<[^>]*>", "");
 
@@ -423,7 +447,9 @@ class Program
                 str.AppendLine($"# {item.Type} {FormatTypeName(item.Name)}");
                 str.AppendLine(GetSummary(item.Summary, isGroupedType)?.Trim());
                 str.AppendLine();
-                str.AppendLine($"###### **Assembly**: {item.Assemblies[0]}.dll");
+                str.AppendLine($"**Namespace:** {item.Namespace}");
+                str.AppendLine();
+                str.AppendLine($"**Assembly:** {item.Assemblies[0]}.dll");
                 Declaration(str, item);
                 // do not when it is only System.Object
                 if (item.Inheritance?.Length > 1)
@@ -437,6 +463,28 @@ class Program
                     }
 
                     str.Append("\n\n");
+                }
+
+                // Examples
+                if (item.Example?.Length > 0)
+                {
+                    str.AppendLine("## Examples");
+                    foreach (var example in item.Example)
+                    {
+                        if (!string.IsNullOrWhiteSpace(example))
+                        {
+                            str.AppendLine(GetSummary(example, isGroupedType)?.Trim());
+                            str.AppendLine();
+                        }
+                    }
+                }
+
+                // Remarks
+                if (!string.IsNullOrWhiteSpace(item.Remarks))
+                {
+                    str.AppendLine("## Remarks");
+                    str.AppendLine(GetSummary(item.Remarks, isGroupedType)?.Trim());
+                    str.AppendLine();
                 }
 
                 if (item.DerivedClasses != null)
@@ -608,6 +656,18 @@ class Program
                     foreach (var implemented in item.Implements)
                     {
                         str.AppendLine($"* {Link(implemented, isGroupedType)}");
+                    }
+                }
+
+                // Inherited Members
+                if (item.InheritedMembers?.Length > 0)
+                {
+                    str.AppendLine();
+                    str.AppendLine("## Inherited Members");
+                    str.AppendLine();
+                    foreach (var inheritedMember in item.InheritedMembers)
+                    {
+                        str.AppendLine($"* {Link(inheritedMember, isGroupedType)}");
                     }
                 }
 

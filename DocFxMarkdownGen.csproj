@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net6.0</TargetFramework>
+        <TargetFramework>net9.0</TargetFramework>
         <Version>0.4.2</Version>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <Description>Docusaurus Markdown generator using DocFX.</Description>
@@ -12,7 +12,6 @@
         <PackageOutputPath>./nupkg</PackageOutputPath>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <LangVersion>11.0</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -20,6 +19,9 @@
         <PackageReference Include="YamlDotNet" Version="13.1.1" />
         <Compile Remove="examples\**" />
         <None Remove="examples\**\*" />
+        <Compile Remove="docfx_src\**" />
+        <EmbeddedResource Remove="docfx_src\**" />
+        <None Remove="docfx_src\**\*" />
     </ItemGroup>
 
 </Project>

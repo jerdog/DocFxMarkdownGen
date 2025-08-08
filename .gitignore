@@ -8,6 +8,8 @@ riderModule.iml
 /config.yaml
 /nupkg
 /.config/dotnet-tools.json
+/sources/
+
 
 /examples/*/.docusaurus
 /examples/*/node_modules
