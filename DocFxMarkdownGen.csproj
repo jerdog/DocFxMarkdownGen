@@ -19,9 +19,9 @@
         <PackageReference Include="YamlDotNet" Version="13.1.1" />
         <Compile Remove="examples\**" />
         <None Remove="examples\**\*" />
-        <Compile Remove="docfx_src\**" />
-        <EmbeddedResource Remove="docfx_src\**" />
-        <None Remove="docfx_src\**\*" />
+        <Compile Remove="sources\**" />
+        <EmbeddedResource Remove="sources\**" />
+        <None Remove="sources\**\*" />
     </ItemGroup>
 
 </Project>
