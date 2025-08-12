@@ -636,10 +636,10 @@ class Program
             // Handle span tags with class="term"
             summary = Regex.Replace(summary, @"<span class=""term"">([^<]*)</span>", "**$1**");
 
-            // Handle ul/li tags for lists
-            summary = Regex.Replace(summary, @"<ul>", "");
-            summary = Regex.Replace(summary, @"</ul>", "");
-            summary = Regex.Replace(summary, @"<li>([^<]*)</li>", "* $1");
+            // Handle ul/li tags for lists (ensure each item is on its own line)
+            summary = Regex.Replace(summary, @"<ul\b[^>]*>", "\n");
+            summary = Regex.Replace(summary, @"</ul>", "\n");
+            summary = Regex.Replace(summary, @"<li>([\s\S]*?)</li>", m => "\n* " + m.Groups[1].Value.Trim() + "\n");
 
             // Clean up any remaining HTML tags
             summary = Regex.Replace(summary, @"<[^>]*>", "");
@@ -793,7 +793,8 @@ class Program
                     return $"`{uid}`"; // Ensure unknown references are code-wrapped
                 var anchor = Regex.Replace(reference.Name.ToLowerInvariant(), "[^a-z0-9]", "");
                 var parentNsFolder = NamespaceFolder(parent.Namespace);
-                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{parentNsFolder}{(NamespaceHasTypeGrouping(parent.Namespace) ? $"/{GetTypePathPart(parent.Type)}" : "")}/{parent.Name}{extension}")})#{anchor}";
+                // Place the anchor inside the link target
+                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{parentNsFolder}{(NamespaceHasTypeGrouping(parent.Namespace) ? $"/{GetTypePathPart(parent.Type)}" : "")}/{parent.Name}{extension}#{anchor}")})";
             }
         }
 
