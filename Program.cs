@@ -179,7 +179,7 @@ class Program
             if (item.Type == "Namespace")
             {
                 Log73.Console.Debug(item.Type + ": " + item.Name);
-                var dir = Path.Combine(config.OutputPath, item.Name);
+                var dir = Path.Combine(config.OutputPath, NamespaceFolder(item.Name));
                 Directory.CreateDirectory(dir);
             }
         });
@@ -187,6 +187,13 @@ class Program
         #endregion
 
         // util methods
+        static string NamespaceFolder(string @namespace)
+        {
+            const string prefix = "Workspace.XBR.";
+            return @namespace.StartsWith(prefix, StringComparison.Ordinal)
+                ? @namespace[prefix.Length..]
+                : @namespace;
+        }
         static string GetTypePathPart(string type)
             => type switch
             {
@@ -521,19 +528,9 @@ class Program
         string? FileEscape(string? str)
             => str?.Replace("<", "`").Replace(">", "`").Replace(" ", "%20");
 
-        string SourceLink(Item item)
-            => item.Source?.Remote == null
-                ? ""
-                : $"[View Source]({item.Source.Remote.Repo}/blob/{item.Source.Remote.Branch}/{item.Source.Remote.Path}#L{item.Source.StartLine + 1})";
-
         void Declaration(StringBuilder str, Item item)
         {
-            var sourceLink = SourceLink(item);
-            if (!string.IsNullOrEmpty(sourceLink))
-            {
-                str.AppendLine(sourceLink);
-                str.AppendLine();
-            }
+            // Do not convert or surface YAML `source:` keys; omit any source link output
             if (item.Syntax != null)
             {
                 str.AppendLine("```csharp title=\"Declaration\"");
@@ -659,6 +656,55 @@ class Program
             return HtmlEscape(summary)?.Trim();
         }
 
+        string BuildRemarksAdmonitions(string? remarks, bool linkFromGroupedType)
+        {
+            if (string.IsNullOrWhiteSpace(remarks)) return string.Empty;
+
+            // Extract <p>...</p> segments; fallback to whole content if none
+            var matches = Regex.Matches(remarks, @"<p>([\s\S]*?)</p>", RegexOptions.IgnoreCase);
+            var paragraphs = new List<string>();
+            if (matches.Count > 0)
+            {
+                foreach (Match m in matches)
+                {
+                    paragraphs.Add(m.Groups[1].Value);
+                }
+            }
+            else
+            {
+                paragraphs.Add(remarks);
+            }
+
+            static bool IsCautionParagraph(string html)
+            {
+                var plain = Regex.Replace(html ?? string.Empty, @"<[^>]*>", string.Empty).TrimStart();
+                return plain.StartsWith("Use with caution.", StringComparison.OrdinalIgnoreCase);
+            }
+
+            var sb = new StringBuilder();
+            foreach (var para in paragraphs)
+            {
+                var content = GetSummary(para, linkFromGroupedType)?.Trim();
+                if (string.IsNullOrWhiteSpace(content)) continue;
+                if (IsCautionParagraph(para))
+                {
+                    sb.AppendLine($":::caution");
+                    sb.AppendLine();
+                    sb.AppendLine(content);
+                    sb.AppendLine();
+                    sb.AppendLine(":::");
+                    sb.AppendLine();
+                }
+                else
+                {
+                    sb.AppendLine(content);
+                    sb.AppendLine();
+                }
+            }
+
+            return sb.ToString();
+        }
+
         Log73.Console.Info("Generating and writing markdown...");
 
         // if grouping types, count types in each namespace, for minCount
@@ -729,15 +775,16 @@ class Program
             if (reference.Type is "Class" or "Interface" or "Enum" or "Struct" or "Delegate")
             {
                 var canonicalName = GetCanonicalTypeName(reference.Namespace, reference.Type, reference.Name);
+                var nsFolder = NamespaceFolder(reference.Namespace);
                 if (NamespaceHasTypeGrouping(reference.Namespace))
                     return
-                        $"[{HtmlEscape(name)}]({FileEscape($"{dots}{reference.Namespace}/{GetTypePathPart(reference.Type)}/{canonicalName}{extension}")})";
-                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{reference.Namespace}/{canonicalName}{extension}")})";
+                        $"[{HtmlEscape(name)}]({FileEscape($"{dots}{nsFolder}/{GetTypePathPart(reference.Type)}/{canonicalName}{extension}")})";
+                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{nsFolder}/{canonicalName}{extension}")})";
             }
             else if (reference.Type is "Namespace")
             {
                 // Always link to the namespace index file to satisfy Docusaurus resolver
-                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{reference.Name}/index.md")})";
+                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{NamespaceFolder(reference.Name)}/index.md")})";
             }
             else
             {
@@ -745,7 +792,8 @@ class Program
                 if (parent == null)
                     return $"`{uid}`"; // Ensure unknown references are code-wrapped
                 var anchor = Regex.Replace(reference.Name.ToLowerInvariant(), "[^a-z0-9]", "");
-                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{reference.Namespace}{(NamespaceHasTypeGrouping(parent.Namespace) ? $"/{GetTypePathPart(parent.Type)}" : "")}/{parent.Name}{extension}")})#{anchor}";
+                var parentNsFolder = NamespaceFolder(parent.Namespace);
+                return $"[{HtmlEscape(name)}]({FileEscape($"{dots}{parentNsFolder}{(NamespaceHasTypeGrouping(parent.Namespace) ? $"/{GetTypePathPart(parent.Type)}" : "")}/{parent.Name}{extension}")})#{anchor}";
             }
         }
 
@@ -810,7 +858,7 @@ class Program
                     }
                 }
 
-                // Remarks
+                // Remarks (parent type: keep original formatting, no admonitions)
                 if (!string.IsNullOrWhiteSpace(item.Remarks))
                 {
                     str.AppendLine("## Remarks");
@@ -864,6 +912,13 @@ class Program
                         str.AppendLine($"### {FormatTypeName(property.Name)}");
                         str.AppendLine(GetSummary(property.Summary, isGroupedType)?.Trim());
                         Declaration(str, property);
+                        if (!string.IsNullOrWhiteSpace(property.Remarks))
+                        {
+                            str.AppendLine("##### Remarks");
+                            var remarksBlock = BuildRemarksAdmonitions(property.Remarks, isGroupedType);
+                            if (!string.IsNullOrWhiteSpace(remarksBlock))
+                                str.AppendLine(remarksBlock.TrimEnd());
+                        }
                     }
                 }
 
@@ -877,6 +932,13 @@ class Program
                         str.AppendLine($"### {FormatTypeName(field.Name)}");
                         str.AppendLine(GetSummary(field.Summary, isGroupedType)?.Trim());
                         Declaration(str, field);
+                        if (!string.IsNullOrWhiteSpace(field.Remarks))
+                        {
+                            str.AppendLine("##### Remarks");
+                            var remarksBlock = BuildRemarksAdmonitions(field.Remarks, isGroupedType);
+                            if (!string.IsNullOrWhiteSpace(remarksBlock))
+                                str.AppendLine(remarksBlock.TrimEnd());
+                        }
                     }
                 }
 
@@ -890,6 +952,13 @@ class Program
                         str.AppendLine($"### {FormatTypeName(method.Name)}");
                         str.AppendLine(GetSummary(method.Summary, isGroupedType)?.Trim());
                         Declaration(str, method);
+                        if (!string.IsNullOrWhiteSpace(method.Remarks))
+                        {
+                            str.AppendLine("##### Remarks");
+                            var remarksBlock = BuildRemarksAdmonitions(method.Remarks, isGroupedType);
+                            if (!string.IsNullOrWhiteSpace(remarksBlock))
+                                str.AppendLine(remarksBlock.TrimEnd());
+                        }
                         if (!string.IsNullOrWhiteSpace(method.Syntax!.Return?.Type))
                         {
                             str.AppendLine();
@@ -973,6 +1042,13 @@ class Program
                         str.AppendLine($"### {FormatTypeName(@event.Name)}");
                         str.AppendLine(GetSummary(@event.Summary, isGroupedType)?.Trim());
                         Declaration(str, @event);
+                        if (!string.IsNullOrWhiteSpace(@event.Remarks))
+                        {
+                            str.AppendLine("##### Remarks");
+                            var remarksBlock = BuildRemarksAdmonitions(@event.Remarks, isGroupedType);
+                            if (!string.IsNullOrWhiteSpace(remarksBlock))
+                                str.AppendLine(remarksBlock.TrimEnd());
+                        }
                         str.AppendLine("##### Event Type");
                         if (@event.Syntax!.Return!.Description == null)
                             str.AppendLine(Link(@event.Syntax.Return.Type, isGroupedType).Trim());
@@ -1031,8 +1107,8 @@ class Program
                 var canonicalNameForWrite = GetCanonicalTypeName(item.Namespace, item.Type, item.Name);
                 var safeName = canonicalNameForWrite.Replace('<', '`').Replace('>', '`');
                 var path = !isGroupedType
-                    ? Path.Join(config.OutputPath, item.Namespace, safeName) + ".md"
-                    : Path.Join(config.OutputPath, item.Namespace, GetTypePathPart(item.Type), safeName) + ".md";
+                    ? Path.Join(config.OutputPath, NamespaceFolder(item.Namespace), safeName) + ".md"
+                    : Path.Join(config.OutputPath, NamespaceFolder(item.Namespace), GetTypePathPart(item.Type), safeName) + ".md";
 
                 // create directory if it doesn't exist
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -1044,7 +1120,7 @@ class Program
                 var str = new StringBuilder();
                 str.AppendLine("---");
                 str.AppendLine($"title: {item.Type} {item.Name}");
-                str.AppendLine($"sidebar_label: {item.Name}");
+                str.AppendLine($"sidebar_label: {NamespaceFolder(item.Name)}");
                 str.AppendLine("---");
                 str.AppendLine($"# Namespace {HtmlEscape(item.Name)}");
 
@@ -1068,7 +1144,7 @@ class Program
                 Do("Enum", "Enums");
                 Do("Delegate", "Delegates");
 
-                await File.WriteAllTextAsync(Path.Join(config.OutputPath, item.Name, $"index.md"), LintMarkdown(str.ToString()));
+                await File.WriteAllTextAsync(Path.Join(config.OutputPath, NamespaceFolder(item.Name), $"index.md"), LintMarkdown(str.ToString()));
             }
         });
 
@@ -1092,7 +1168,7 @@ class Program
             foreach (var ns in namespaces)
             {
                 // Link to each namespace folder/index.md
-                root.AppendLine($"* [{HtmlEscape(ns)}](./{ns}/index.md)");
+                root.AppendLine($"* [{HtmlEscape(ns)}](./{NamespaceFolder(ns)}/index.md)");
             }
 
             await File.WriteAllTextAsync(Path.Join(config.OutputPath, "index.md"), LintMarkdown(root.ToString()));

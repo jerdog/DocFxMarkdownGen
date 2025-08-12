@@ -9,6 +9,7 @@ riderModule.iml
 /nupkg
 /.config/dotnet-tools.json
 /sources/
+.DS_Store
 
 
 /examples/*/.docusaurus
