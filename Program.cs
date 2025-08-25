@@ -508,7 +508,7 @@ class Program
         }
 
         string? FileEscape(string? str)
-            => str?.Replace("<", "`").Replace(">", "`").Replace(" ", "%20");
+            => str?.Replace("<", "-").Replace(">", "").Replace(" ", "%20");
 
         void Declaration(StringBuilder str, Item item)
         {
@@ -746,7 +746,7 @@ class Program
                     var wrapperUid = uid[..openBrace];
                     var innerUid = uid[(openBrace + 1)..closeBrace];
 
-                    var innerLink = Link(innerUid, linkFromGroupedType, false);
+                    var innerItem = items.FirstOrDefault(i => i.Uid == innerUid);
                     var wrapperName = items.FirstOrDefault(i => i.Uid == wrapperUid)?.Name ?? wrapperUid;
 
                     if (wrapperUid == "System.Threading.Tasks.Task")
@@ -754,7 +754,17 @@ class Program
                         wrapperName = "Task";
                     }
 
-                    return $"`{wrapperName}`<{innerLink}>";
+                    if (innerItem != null)
+                    {
+                        // Resolvable inner type -> `Wrapper`< [Inner](...) >
+                        var innerLink = Link(innerUid, linkFromGroupedType, false);
+                        return $"`{wrapperName}`< {innerLink} >";
+                    }
+                    else
+                    {
+                        // Unresolvable inner type -> `Wrapper<Inner>`
+                        return $"`{wrapperName}<{innerUid}>`";
+                    }
                 }
             }
 
@@ -973,7 +983,12 @@ class Program
                             if (!string.IsNullOrWhiteSpace(method.Syntax.Return.Description))
                             {
                                 str.AppendLine();
-                                str.AppendLine(GetSummary(method.Syntax.Return.Description, isGroupedType));
+                                var description = GetSummary(method.Syntax.Return.Description, isGroupedType)?.Trim();
+                                if (description != null && !description.Contains(' ') && !description.Contains('\n'))
+                                {
+                                    description = $"`{description}`";
+                                }
+                                str.AppendLine(description);
                             }
                         }
 
@@ -1111,7 +1126,7 @@ class Program
                 }
 
                 var canonicalNameForWrite = GetCanonicalTypeName(item.Namespace, item.Type, item.Name);
-                var safeName = canonicalNameForWrite.Replace('<', '`').Replace('>', '`');
+                var safeName = canonicalNameForWrite.Replace('<', '-').Replace(">", "");
                 var path = !isGroupedType
                     ? Path.Join(config.OutputPath, NamespaceFolder(item.Namespace), safeName) + ".md"
                     : Path.Join(config.OutputPath, NamespaceFolder(item.Namespace), GetTypePathPart(item.Type), safeName) + ".md";
