@@ -371,29 +371,11 @@ class Program
                 }
 
                 // Fix table formatting
-                if (line.Contains("|"))
+                if (line.Trim().StartsWith("|") && line.Trim().EndsWith("|"))
                 {
-                    // Ensure table rows are properly aligned
-                    var parts = line.Split('|');
-                    if (parts.Length > 1)
-                    {
-                        var newParts = new List<string>();
-                        for (int j = 0; j < parts.Length; j++)
-                        {
-                            var part = parts[j].Trim();
-                            if (j == 0 || j == parts.Length - 1)
-                            {
-                                // First and last parts might be empty for edge pipes
-                                newParts.Add(part);
-                            }
-                            else
-                            {
-                                // Center parts should be padded
-                                newParts.Add($" {part} ");
-                            }
-                        }
-                        line = "|" + string.Join("|", newParts) + "|";
-                    }
+                    var parts = line.Trim().Split('|');
+                    var contentParts = parts.Skip(1).Take(parts.Length - 2).Select(p => p.Trim());
+                    line = $"| {string.Join(" | ", contentParts)} |";
                 }
 
                 // Fix link formatting
