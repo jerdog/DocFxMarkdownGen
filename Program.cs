@@ -736,6 +736,28 @@ class Program
 
         string Link(string uid, bool linkFromGroupedType, bool nameOnly = false, bool linkFromIndex = false)
         {
+            // Handle Task<T> and other generic types
+            if (uid.Contains('{') && uid.EndsWith('}'))
+            {
+                var openBrace = uid.IndexOf('{');
+                var closeBrace = uid.LastIndexOf('}');
+                if (openBrace != -1 && closeBrace > openBrace)
+                {
+                    var wrapperUid = uid[..openBrace];
+                    var innerUid = uid[(openBrace + 1)..closeBrace];
+
+                    var innerLink = Link(innerUid, linkFromGroupedType, false);
+                    var wrapperName = items.FirstOrDefault(i => i.Uid == wrapperUid)?.Name ?? wrapperUid;
+
+                    if (wrapperUid == "System.Threading.Tasks.Task")
+                    {
+                        wrapperName = "Task";
+                    }
+
+                    return $"`{wrapperName}`<{innerLink}>";
+                }
+            }
+
             var reference = items.FirstOrDefault(i => i.Uid == uid);
             if (uid.Contains('{') && reference == null)
             {
@@ -947,11 +969,12 @@ class Program
                             str.AppendLine();
                             str.AppendLine("##### Returns");
                             str.AppendLine();
-                            str.Append(Link(method.Syntax.Return.Type, isGroupedType).Trim());
-                            if (string.IsNullOrWhiteSpace(method.Syntax.Return?.Description))
+                            str.AppendLine(Link(method.Syntax.Return.Type, isGroupedType).Trim());
+                            if (!string.IsNullOrWhiteSpace(method.Syntax.Return.Description))
+                            {
                                 str.AppendLine();
-                            else
-                                str.Append(": " + GetSummary(method.Syntax.Return.Description, isGroupedType));
+                                str.AppendLine(GetSummary(method.Syntax.Return.Description, isGroupedType));
+                            }
                         }
 
                         if (method.Syntax.Parameters is { Length: > 0 })
