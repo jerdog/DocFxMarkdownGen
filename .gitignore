@@ -19,3 +19,6 @@ riderModule.iml
 .vercel
 
 DocFxMarkdownGen
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

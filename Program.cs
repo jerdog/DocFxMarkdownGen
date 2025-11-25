@@ -238,7 +238,7 @@ class Program
                 var line = lines[i];
                 var trimmedLine = line.TrimEnd();
 
-                                // Handle code blocks
+                // Handle code blocks
                 if (trimmedLine.StartsWith("```"))
                 {
                     if (!inCodeBlock)
@@ -321,7 +321,7 @@ class Program
                     }
                 }
 
-                                // Fix heading levels (MD001) - ensure proper increment
+                // Fix heading levels (MD001) - ensure proper increment
                 if (line.StartsWith("#"))
                 {
                     var headingLevel = 0;
@@ -419,7 +419,9 @@ class Program
                 // Fix code formatting
                 line = Regex.Replace(line, @"`([^`]+)`", "`$1`");
 
-                // Wrap placeholder tokens like {appToken} with backticks, but only outside inline/code blocks
+                // Wrap placeholder tokens like {appToken} with backticks, and HTML-escape any
+                // remaining stray '{' / '}' so that MDX does not treat them as expressions.
+                // This runs only outside fenced code blocks.
                 static string WrapPlaceholdersOutsideCode(string input)
                 {
                     if (string.IsNullOrEmpty(input)) return input;
@@ -448,6 +450,31 @@ class Program
                                     continue;
                                 }
                             }
+
+                            // Not a simple {token} placeholder: HTML-escape the brace so MDX
+                            // doesn't try to interpret it as an expression start.
+                            sb.Append("&#123;");
+                            continue;
+                        }
+
+                        // HTML-escape lone closing braces outside inline code as well
+                        if (!inCode && ch == '}')
+                        {
+                            sb.Append("&#125;");
+                            continue;
+                        }
+
+                        // Also HTML-escape braces that appear inside single-line inline code spans,
+                        // because MDX can still try to interpret them as expressions.
+                        if (inCode && ch == '{')
+                        {
+                            sb.Append("&#123;");
+                            continue;
+                        }
+                        if (inCode && ch == '}')
+                        {
+                            sb.Append("&#125;");
+                            continue;
                         }
 
                         sb.Append(ch);
@@ -478,7 +505,7 @@ class Program
 
             var finalMarkdown = string.Join("\n", result);
 
-                        // Post-process to fix only the most obvious malformed patterns
+            // Post-process to fix only the most obvious malformed patterns
             // Be very conservative to avoid breaking valid code blocks
             finalMarkdown = Regex.Replace(finalMarkdown, @"```csharp\s*$", "```");
             finalMarkdown = Regex.Replace(finalMarkdown, @"```\s*```csharp\s*$", "```");
@@ -553,6 +580,176 @@ class Program
             return name;
         }
 
+        // Detect runs of lines that look like JSON and wrap them in ```json fences.
+        static string WrapJsonBlocks(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+
+            var lines = text.Split('\n');
+            var result = new List<string>();
+            var jsonBuffer = new List<string>();
+            bool inJson = false;
+
+            // Heuristics for JSON-like lines:
+            // - Line is just "{" or "}" (with optional trailing comma)
+            // - Line contains "key": pattern (quoted key followed by colon)
+            // - Line is just "]" or "[" or "}," or "],"
+            static bool LooksLikeJson(string line)
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed)) return false;
+
+                // Standalone braces/brackets
+                if (trimmed is "{" or "}" or "{," or "}," or "[" or "]" or "[," or "],")
+                    return true;
+
+                // "key": pattern (JSON object property)
+                if (Regex.IsMatch(trimmed, @"^\s*""[^""]+"":\s*"))
+                    return true;
+
+                // Looks like a JSON value line (starts with quote, number, null, true, false, or nested object/array)
+                if (Regex.IsMatch(trimmed, @"^[\[\{]") || Regex.IsMatch(trimmed, @"[\]\},]\s*$"))
+                    return true;
+
+                return false;
+            }
+
+            // Check if a line is a label/header before JSON (e.g., "consumption":)
+            static bool IsJsonLabel(string line)
+            {
+                var trimmed = line.Trim();
+                // Pattern like: "someName": or just "someName":
+                return Regex.IsMatch(trimmed, @"^""?[A-Za-z_][A-Za-z0-9_]*""?:\s*$");
+            }
+
+            void FlushJsonBuffer()
+            {
+                if (jsonBuffer.Count >= 2) // Only wrap if we have at least 2 JSON-like lines
+                {
+                    // Check if there's real structure (at least one brace)
+                    var combined = string.Join("\n", jsonBuffer);
+                    if (combined.Contains('{') || combined.Contains('['))
+                    {
+                        result.Add("");
+                        result.Add("```json");
+                        result.AddRange(jsonBuffer);
+                        result.Add("```");
+                        result.Add("");
+                    }
+                    else
+                    {
+                        // Not really JSON, just add as-is
+                        result.AddRange(jsonBuffer);
+                    }
+                }
+                else
+                {
+                    result.AddRange(jsonBuffer);
+                }
+                jsonBuffer.Clear();
+                inJson = false;
+            }
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var trimmed = line.Trim();
+
+                // Skip empty lines - they can be part of JSON blocks or separators
+                if (string.IsNullOrWhiteSpace(trimmed))
+                {
+                    if (inJson)
+                    {
+                        // Check if next non-empty line is also JSON-like
+                        bool moreJsonAhead = false;
+                        for (int j = i + 1; j < lines.Length && j < i + 3; j++)
+                        {
+                            var nextTrimmed = lines[j].Trim();
+                            if (!string.IsNullOrWhiteSpace(nextTrimmed))
+                            {
+                                moreJsonAhead = LooksLikeJson(nextTrimmed);
+                                break;
+                            }
+                        }
+                        if (moreJsonAhead)
+                        {
+                            // Keep collecting
+                            continue;
+                        }
+                        else
+                        {
+                            // End of JSON block
+                            FlushJsonBuffer();
+                            result.Add(line);
+                        }
+                    }
+                    else
+                    {
+                        result.Add(line);
+                    }
+                    continue;
+                }
+
+                bool isJsonLine = LooksLikeJson(trimmed);
+                bool isLabel = IsJsonLabel(trimmed);
+
+                if (isJsonLine)
+                {
+                    if (!inJson)
+                    {
+                        inJson = true;
+                        // Check if previous line was a label like "consumption":
+                        if (result.Count > 0 && IsJsonLabel(result[^1]))
+                        {
+                            var label = result[^1];
+                            result.RemoveAt(result.Count - 1);
+                            jsonBuffer.Add(label);
+                        }
+                    }
+                    jsonBuffer.Add(line);
+                }
+                else if (isLabel && !inJson)
+                {
+                    // Could be start of JSON, peek ahead
+                    bool jsonFollows = false;
+                    for (int j = i + 1; j < lines.Length && j < i + 3; j++)
+                    {
+                        var nextTrimmed = lines[j].Trim();
+                        if (!string.IsNullOrWhiteSpace(nextTrimmed))
+                        {
+                            jsonFollows = LooksLikeJson(nextTrimmed);
+                            break;
+                        }
+                    }
+                    if (jsonFollows)
+                    {
+                        inJson = true;
+                        jsonBuffer.Add(line);
+                    }
+                    else
+                    {
+                        result.Add(line);
+                    }
+                }
+                else
+                {
+                    if (inJson)
+                    {
+                        FlushJsonBuffer();
+                    }
+                    result.Add(line);
+                }
+            }
+
+            // Flush any remaining JSON
+            if (jsonBuffer.Count > 0)
+            {
+                FlushJsonBuffer();
+            }
+
+            return string.Join("\n", result);
+        }
+
         string? GetSummary(string? summary, bool linkFromGroupedType)
         {
             if (summary == null)
@@ -602,7 +799,7 @@ class Program
             summary = Regex.Replace(summary, @"<code>([^<]*)", match => $"`{match.Groups[1].Value}`"); // Handle unclosed tags
 
             summary = linkRegex.Replace(summary, match => $"[{match.Groups[2].Value}]({match.Groups[1].Value})");
-            summary = brRegex.Replace(summary, _ => "\n\n");
+            summary = brRegex.Replace(summary, _ => "\n");
 
             // Handle HTML entities
             summary = summary.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&");
@@ -626,8 +823,10 @@ class Program
             // Clean up any remaining HTML tags
             summary = Regex.Replace(summary, @"<[^>]*>", "");
 
-            // Handle dictionary-like content
-            summary = Regex.Replace(summary, @"\{[^}]*:[^}]*\}", match => $"`{match.Value}`");
+            // Detect and wrap JSON-like blocks in ```json fences.
+            // Heuristic: look for runs of consecutive lines that look like JSON
+            // (start/end with braces, or contain "key": patterns).
+            summary = WrapJsonBlocks(summary);
 
             // Clean up multiple newlines
             summary = Regex.Replace(summary, @"\n{3,}", "\n\n");
